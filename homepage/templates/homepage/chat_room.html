@@ -34,11 +34,17 @@
 
     <script>
         const roomName = '{{ room_name }}';
-        const chatSocket = new WebSocket(
-            'ws://' + window.location.host + '/ws/chat/' + roomName + '/'
-        );
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        let chatSocket;
+        
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            chatSocket = new WebSocket(
+                protocol + '//' + window.location.host + '/ws/chat/' + roomName + '/'
+            );
 
-        chatSocket.onmessage = function(e) {
+            chatSocket.onmessage = function(e) {
             const data = JSON.parse(e.data);
             if (data.type === 'history') {
                 data.messages.forEach(addMessage);
@@ -47,10 +53,24 @@
             }
         };
 
-        chatSocket.onclose = function(e) {
+            chatSocket.onclose = function(e) {
             console.error('Chat socket closed unexpectedly');
+            if (reconnectAttempts < maxReconnectAttempts) {
+                console.log('Attempting to reconnect...');
+                reconnectAttempts++;
+                setTimeout(connect, 1000 * Math.min(reconnectAttempts, 30));
+            } else {
+                alert('チャットサーバーへの接続が切断されました。ページを再読み込みしてください。');
+            }
         };
 
+            chatSocket.onerror = function(e) {
+            console.error('WebSocket error:', e);
+        };
+
+        }
+
+        connect();
         document.querySelector('#chat-message-input').focus();
         document.querySelector('#chat-message-input').onkeyup = function(e) {
             if (e.keyCode === 13) {
@@ -62,10 +82,19 @@
             const messageInputDom = document.querySelector('#chat-message-input');
             const message = messageInputDom.value;
             if (message.trim()) {
-                chatSocket.send(JSON.stringify({
-                    'message': message
-                }));
-                messageInputDom.value = '';
+                try {
+                    if (chatSocket.readyState === WebSocket.OPEN) {
+                        chatSocket.send(JSON.stringify({
+                            'message': message
+                        }));
+                        messageInputDom.value = '';
+                    } else {
+                        alert('チャットサーバーに接続されていません。ページを再読み込みしてください。');
+                    }
+                } catch (error) {
+                    console.error('メッセージ送信エラー:', error);
+                    alert('メッセージの送信に失敗しました。');
+                }
             }
         };
 

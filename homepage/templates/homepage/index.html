@@ -62,9 +62,22 @@
 document.getElementById('room-form').onsubmit = function(e) {
     e.preventDefault();
     const roomName = document.getElementById('room-name').value.trim();
-    if (roomName) {
-        window.location.pathname = '/chat/' + roomName + '/';
+    
+    // 入力値のバリデーション
+    if (!roomName) {
+        alert('ルーム名を入力してください。');
+        return;
     }
+    
+    // 英数字とアンダースコアのみ許可
+    if (!/^[a-zA-Z0-9_]+$/.test(roomName)) {
+        alert('ルーム名は英数字とアンダースコアのみ使用できます。');
+        return;
+    }
+
+    // URLを構築（Django URLパターンに合わせる）
+    const roomUrl = "{% url 'chat_room' 'ROOM_NAME' %}".replace('ROOM_NAME', roomName);
+    window.location.href = roomUrl;
 };
 </script>
 </body>
