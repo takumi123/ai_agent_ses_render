@@ -27,13 +27,25 @@ services:
           type: redis
           name: mysite-cache
           property: connectionString
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: YOUTUBE_CREDENTIALS
+        sync: false
 
   - type: worker
     name: mysite-worker
     region: singapore
     runtime: python
     buildCommand: "./build.sh"
-    startCommand: "daphne mysite.asgi:application"
+    startCommand: "python -m gunicorn mysite.asgi:application -k uvicorn.workers.UvicornWorker"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -46,13 +58,25 @@ services:
           type: redis
           name: mysite-cache
           property: connectionString
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: YOUTUBE_CREDENTIALS
+        sync: false
 
   - type: cron
     name: mysite-cron
     region: singapore
     runtime: python
     buildCommand: "./build.sh"
-    schedule: "0 0 * * *"
+    schedule: "*/5 * * * *"
     startCommand: "python manage.py runcrons"
     envVars:
       - key: DATABASE_URL
@@ -66,6 +90,18 @@ services:
           type: redis
           name: mysite-cache
           property: connectionString
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: YOUTUBE_CREDENTIALS
+        sync: false
 
   - type: redis
     name: mysite-cache
