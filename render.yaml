@@ -64,10 +64,11 @@ services:
     name: mysite-cache
     region: singapore
     plan: free
-    ipAllowList: []
+    maxmemoryPolicy: noeviction
 
   - type: pserv
     name: mysitedb
     region: singapore
     plan: free
-    ipAllowList: []
+    databaseName: mysite
+    user: mysite
