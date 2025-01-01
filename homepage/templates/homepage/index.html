@@ -14,13 +14,58 @@
           crossorigin="anonymous">
 </head>
 <body>
-<main class="container">
+<main class="container mt-5">
     <div class="row text-center justify-content-center">
         <div class="col">
             <h1 class="display-4">ようこそ！</h1>
             <p class="lead">このサイトはRenderにデプロイされています。</p>
         </div>
     </div>
+
+    <div class="row mt-5">
+        <div class="col-md-6 offset-md-3">
+            <div class="card">
+                <div class="card-header">
+                    チャットルームに参加
+                </div>
+                <div class="card-body">
+                    <form id="room-form" class="form-inline justify-content-center">
+                        <div class="form-group mx-sm-3 mb-2">
+                            <label for="room-name" class="sr-only">ルーム名</label>
+                            <input type="text" class="form-control" id="room-name" placeholder="ルーム名を入力">
+                        </div>
+                        <button type="submit" class="btn btn-primary mb-2">参加</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    人気のチャットルーム
+                </div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        <li class="list-group-item">
+                            <a href="{% url 'chat_room' 'general' %}">一般チャット</a>
+                        </li>
+                        <li class="list-group-item">
+                            <a href="{% url 'chat_room' 'random' %}">雑談ルーム</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </main>
+
+<script>
+document.getElementById('room-form').onsubmit = function(e) {
+    e.preventDefault();
+    const roomName = document.getElementById('room-name').value.trim();
+    if (roomName) {
+        window.location.pathname = '/chat/' + roomName + '/';
+    }
+};
+</script>
 </body>
 </html>

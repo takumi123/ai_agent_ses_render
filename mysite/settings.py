@@ -44,6 +44,38 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
+    'django_crontab',
+]
+
+# Channels
+ASGI_APPLICATION = 'mysite.asgi.application'
+
+# Redis
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+# Channels layers
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [os.environ.get('REDIS_URL', 'redis://localhost:6379/0')],
+        },
+    },
+}
+
+# Crontab
+CRONJOBS = [
+    ('0 0 * * *', 'mysite.cron.daily_cleanup'),
+    ('0 * * * *', 'mysite.cron.hourly_task'),
 ]
 
 MIDDLEWARE = [

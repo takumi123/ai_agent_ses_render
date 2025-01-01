@@ -3,11 +3,19 @@ databases:
     plan: free
     databaseName: mysite
     user: mysite
+    region: singapore
+
+redis:
+  - name: mysite-redis
+    plan: free
+    region: singapore
+    maxmemoryPolicy: noeviction
 
 services:
   - type: web
-    plan: free
     name: mysite
+    plan: free
+    region: singapore
     runtime: python
     buildCommand: "./build.sh"
     startCommand: "python -m gunicorn mysite.asgi:application -k uvicorn.workers.UvicornWorker"
@@ -20,3 +28,47 @@ services:
         generateValue: true
       - key: WEB_CONCURRENCY
         value: 4
+      - key: REDIS_URL
+        fromService:
+          name: mysite-redis
+          type: redis
+          property: connectionString
+
+  - type: worker
+    name: mysite-worker
+    region: singapore
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "python manage.py runworker"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mysitedb
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          name: mysite-redis
+          type: redis
+          property: connectionString
+
+  - type: cron
+    name: mysite-cron
+    region: singapore
+    runtime: python
+    buildCommand: "./build.sh"
+    schedule: "0 0 * * *"
+    startCommand: "python manage.py runcrons"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mysitedb
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          name: mysite-redis
+          type: redis
+          property: connectionString
