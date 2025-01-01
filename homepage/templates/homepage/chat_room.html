@@ -39,9 +39,11 @@
         let chatSocket;
         
         function connect() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsHost = window.location.host.includes('onrender.com') ? 
+                window.location.host : window.location.hostname + ':8001';
             chatSocket = new WebSocket(
-                protocol + '//' + window.location.host + '/ws/chat/' + roomName + '/'
+                wsProtocol + '//' + wsHost + '/ws/chat/' + roomName + '/'
             );
 
             chatSocket.onmessage = function(e) {
