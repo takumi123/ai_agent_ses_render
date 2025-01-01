@@ -1,0 +1,113 @@
+databases:
+  - name: mysitedb
+    databaseName: mysite
+    user: mysite
+    region: singapore
+    plan: free
+
+services:
+  - type: web
+    name: mysite
+    plan: free
+    region: singapore
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "python -m gunicorn mysite.asgi:application -k uvicorn.workers.UvicornWorker"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mysitedb
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: WEB_CONCURRENCY
+        value: 4
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: mysite-cache
+          property: connectionString
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: YOUTUBE_CREDENTIALS
+        sync: false
+
+  - type: worker
+    name: mysite-worker
+    region: singapore
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "python -m gunicorn mysite.asgi:application -k uvicorn.workers.UvicornWorker"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mysitedb
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: mysite-cache
+          property: connectionString
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: YOUTUBE_CREDENTIALS
+        sync: false
+
+  - type: cron
+    name: mysite-cron
+    region: singapore
+    runtime: python
+    buildCommand: "./build.sh"
+    schedule: "*/5 * * * *"
+    startCommand: "python manage.py runcrons"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mysitedb
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: mysite-cache
+          property: connectionString
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: YOUTUBE_CREDENTIALS
+        sync: false
+
+  - type: redis
+    name: mysite-cache
+    region: singapore
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere

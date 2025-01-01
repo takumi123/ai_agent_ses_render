@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>動画一覧 - 動画分析アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen flex flex-col">
+        <!-- ヘッダー -->
+        <header class="bg-white shadow-sm">
+            <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex">
+                        <div class="flex-shrink-0 flex items-center">
+                            <a href="{% url 'homepage:index' %}" class="text-2xl font-bold text-gray-900">動画分析アプリ</a>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        {% if user.is_admin %}
+                            <a href="{% url 'homepage:user_list' %}" class="text-gray-700 hover:text-gray-900">ユーザー一覧</a>
+                        {% endif %}
+                        <a href="{% url 'homepage:video_upload' %}" class="text-gray-700 hover:text-gray-900">アップロード</a>
+                        {% if user.avatar_url %}
+                            <img src="{{ user.avatar_url }}" alt="プロフィール画像" class="h-8 w-8 rounded-full">
+                        {% endif %}
+                        <span class="text-gray-700">{{ user.email }}</span>
+                    </div>
+                </div>
+            </nav>
+        </header>
+
+        <!-- メインコンテンツ -->
+        <main class="flex-grow">
+            <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <!-- ページヘッダー -->
+                <div class="mb-6">
+                    <h1 class="text-2xl font-bold text-gray-900">動画一覧</h1>
+                    {% if user.is_admin %}
+                        <p class="mt-2 text-sm text-gray-600">全ユーザーの動画を表示しています</p>
+                    {% endif %}
+                </div>
+
+                <!-- 動画グリッド -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {% for video in videos %}
+                    <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                        <!-- サムネイル -->
+                        <div class="aspect-w-16 aspect-h-9 bg-gray-200">
+                            {% if video.thumbnail_url %}
+                                <img src="{{ video.thumbnail_url }}" alt="{{ video.title }}" class="w-full h-48 object-cover">
+                            {% else %}
+                                <div class="w-full h-48 flex items-center justify-center">
+                                    <span class="text-gray-500">サムネイルなし</span>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- 動画情報 -->
+                        <div class="p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <h2 class="text-lg font-semibold text-gray-900 truncate">{{ video.title }}</h2>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                    {% if video.status == 'completed' %}
+                                        bg-green-100 text-green-800
+                                    {% elif video.status == 'failed' %}
+                                        bg-red-100 text-red-800
+                                    {% else %}
+                                        bg-yellow-100 text-yellow-800
+                                    {% endif %}">
+                                    {{ video.get_status_display }}
+                                </span>
+                            </div>
+
+                            <p class="text-sm text-gray-600 mb-2 line-clamp-2">{{ video.description }}</p>
+
+                            <div class="flex items-center justify-between text-sm">
+                                <div class="flex items-center text-gray-500">
+                                    {% if user.is_admin and video.user != user %}
+                                        <span>{{ video.user.email }}</span>
+                                    {% endif %}
+                                    <span>{{ video.created_at|date:"Y/m/d H:i" }}</span>
+                                </div>
+                                <a href="{% url 'homepage:video_detail' video.id %}"
+                                    class="text-blue-600 hover:text-blue-800">
+                                    詳細を見る
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="col-span-full">
+                        <div class="text-center py-12">
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">動画がありません</h3>
+                            <p class="text-gray-500">
+                                まだ動画がアップロードされていません。<br>
+                                <a href="{% url 'homepage:video_upload' %}" class="text-blue-600 hover:text-blue-800">
+                                    動画をアップロード
+                                </a>
+                                して始めましょう。
+                            </p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </main>
+
+        <!-- フッター -->
+        <footer class="bg-white mt-8">
+            <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+                <p class="text-center text-gray-500 text-sm">
+                    &copy; 2024 動画分析アプリ All rights reserved.
+                </p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
