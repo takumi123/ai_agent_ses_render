@@ -1,16 +1,3 @@
-databases:
-  - name: mysitedb
-    plan: free
-    databaseName: mysite
-    user: mysite
-    region: singapore
-
-redis:
-  - name: mysite-redis
-    plan: free
-    region: singapore
-    maxmemoryPolicy: noeviction
-
 services:
   - type: web
     name: mysite
@@ -30,8 +17,8 @@ services:
         value: 4
       - key: REDIS_URL
         fromService:
-          name: mysite-redis
           type: redis
+          name: mysite-cache
           property: connectionString
 
   - type: worker
@@ -49,8 +36,8 @@ services:
         generateValue: true
       - key: REDIS_URL
         fromService:
-          name: mysite-redis
           type: redis
+          name: mysite-cache
           property: connectionString
 
   - type: cron
@@ -69,6 +56,18 @@ services:
         generateValue: true
       - key: REDIS_URL
         fromService:
-          name: mysite-redis
           type: redis
+          name: mysite-cache
           property: connectionString
+
+  - type: redis
+    name: mysite-cache
+    region: singapore
+    plan: free
+    ipAllowList: []
+
+  - type: pserv
+    name: mysitedb
+    region: singapore
+    plan: free
+    ipAllowList: []
