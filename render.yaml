@@ -1,3 +1,10 @@
+databases:
+  - name: mysitedb
+    databaseName: mysite
+    user: mysite
+    region: singapore
+    plan: free
+
 services:
   - type: web
     name: mysite
@@ -65,10 +72,6 @@ services:
     region: singapore
     plan: free
     maxmemoryPolicy: noeviction
-
-  - type: pserv
-    name: mysitedb
-    region: singapore
-    plan: free
-    databaseName: mysite
-    user: mysite
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
