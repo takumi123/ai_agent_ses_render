@@ -8,6 +8,8 @@ from django.core.files.storage import default_storage
 from django.conf import settings
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 from .models import User, Video, TimeStampedReview, VideoProcessingQueue
 from .auth import GoogleOAuth2Backend, create_oauth_flow
@@ -21,42 +23,106 @@ def index(request):
     print("GOOGLE_OAUTH_CLIENT_ID:", context['GOOGLE_OAUTH_CLIENT_ID'])  # デバッグ用
     return render(request, 'homepage/index.html', context)
 
-@csrf_exempt
 def google_login(request):
     """Googleログイン"""
     if request.method == 'POST':
-        token = request.POST.get('credential')
-        print("Received token:", token)  # デバッグ用
-        if token:
+        credential = request.POST.get('credential')
+        print("Received credential:", credential)  # デバッグ用
+        
+        # ログイン後のリダイレクト先を保存
+        next_url = request.GET.get('next', '')
+        if next_url:
+            request.session['next_url'] = next_url
+        
+        if not credential:
+            print("No credential found in request")  # デバッグ用
+            return redirect('homepage:index')
+        
+        try:
             backend = GoogleOAuth2Backend()
-            user = backend.authenticate(request, token=token)
+            user = backend.authenticate(request, token=credential)
             if user:
                 login(request, user, backend='homepage.auth.GoogleOAuth2Backend')
-                return JsonResponse({'success': True})
+                # 保存されたリダイレクト先があればそこに遷移
+                next_url = request.session.get('next_url', '')
+                if next_url:
+                    del request.session['next_url']
+                    return redirect(next_url)
+                return redirect('homepage:video_upload')
             else:
-                print("Authentication failed")  # デバッグ用
-    return JsonResponse({'success': False}, status=400)
+                print("Authentication failed: User not created/found")  # デバッグ用
+                return redirect('homepage:index')
+        except Exception as e:
+            print(f"Authentication error: {str(e)}")  # デバッグ用
+            return redirect('homepage:index')
+    
+    return redirect('homepage:index')
 
 def google_callback(request):
     """Googleログインコールバック"""
-    code = request.GET.get('code')
-    if code:
+    try:
+        # stateの検証
+        state = request.GET.get('state')
+        stored_state = request.session.get('oauth_state')
+        if not state or state != stored_state:
+            raise ValueError('State mismatch')
+
         flow = create_oauth_flow()
-        flow.fetch_token(code=code)
+        flow.fetch_token(authorization_response=request.build_absolute_uri())
         credentials = flow.credentials
 
-        # 認証情報をセッションに保存
-        request.session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
+        # IDトークンを取得してユーザー情報を検証
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            requests.Request(),
+            settings.GOOGLE_OAUTH_CLIENT_ID
+        )
 
+        # ユーザー情報を取得
+        google_id = id_info['sub']
+        email = id_info['email']
+        name = id_info.get('name', '')
+        picture = id_info.get('picture', '')
+
+        # ユーザーを取得または作成
+        try:
+            user = User.objects.get(google_id=google_id)
+            # 既存ユーザーの情報を更新
+            user.email = email
+            user.avatar_url = picture
+            user.save()
+        except User.DoesNotExist:
+            # 新規ユーザーを作成
+            username = f'google_{google_id}'
+            user = User.objects.create(
+                username=username,
+                email=email,
+                google_id=google_id,
+                avatar_url=picture,
+                is_active=True
+            )
+            user.set_unusable_password()
+            if ' ' in name:
+                first_name, last_name = name.rsplit(' ', 1)
+                user.first_name = first_name
+                user.last_name = last_name
+            else:
+                user.first_name = name
+            user.save()
+
+        # ユーザーをログイン状態にする
+        login(request, user, backend='homepage.auth.GoogleOAuth2Backend')
+        
+        # 保存されたリダイレクト先があればそこに遷移
+        next_url = request.session.get('next_url', '')
+        if next_url:
+            del request.session['next_url']
+            return redirect(next_url)
+        return redirect('homepage:video_upload')
+
+    except Exception as e:
+        print(f"Google callback error: {str(e)}")  # デバッグ用
         return redirect('homepage:index')
-    return JsonResponse({'error': 'Authorization code not found.'}, status=400)
 
 @login_required
 def video_list(request):
@@ -243,10 +309,21 @@ def oauth2callback(request):
         return redirect('error')
 
 def authorize(request):
+    """Google OAuth2認証の開始"""
+    # ログイン後のリダイレクト先を保存
+    next_url = request.GET.get('next', '')
+    if next_url:
+        request.session['next_url'] = next_url
+
     flow = create_oauth_flow()
     authorization_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='true'
+        include_granted_scopes='true',
+        prompt='consent'  # 毎回同意画面を表示
     )
-    request.session['state'] = state
+    
+    # 認証状態をセッションに保存
+    request.session['oauth_state'] = state
+    print(f"Starting OAuth flow. Authorization URL: {authorization_url}")  # デバッグ用
+    
     return redirect(authorization_url)

@@ -19,16 +19,24 @@ class GoogleOAuth2Backend:
             return None
 
         try:
-            # トークンのデコード
-            decoded_token = jwt.decode(token, options={"verify_signature": False})
-            print("Decoded token:", decoded_token)  # デバッグ用
-            
+            # Google OAuth2 クライアントIDを使用してトークンを検証
+            idinfo = id_token.verify_oauth2_token(
+                token,
+                requests.Request(),
+                settings.GOOGLE_OAUTH_CLIENT_ID
+            )
+            print("Verified token info:", idinfo)  # デバッグ用
+
+            # トークンの発行者を確認
+            if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+                raise ValueError('Wrong issuer.')
+
             # ユーザー情報の取得
-            google_id = decoded_token['sub']
-            email = decoded_token['email']
-            name = decoded_token.get('name', '')
-            picture = decoded_token.get('picture', '')
-            email_verified = decoded_token.get('email_verified', False)
+            google_id = idinfo['sub']
+            email = idinfo['email']
+            name = idinfo.get('name', '')
+            picture = idinfo.get('picture', '')
+            email_verified = idinfo.get('email_verified', False)
 
             if not email_verified:
                 raise ValidationError('Email not verified.')
@@ -73,20 +81,22 @@ class GoogleOAuth2Backend:
             return None
 
 def create_oauth_flow():
+    """OAuth2.0フローを作成"""
     # クライアントシークレットファイルのパスを絶対パスで指定
     client_secrets_file = os.path.join(settings.BASE_DIR, "client_secret.json")
     
     # スコープを指定
     scopes = [
-        'https://www.googleapis.com/auth/youtube.upload',
-        'https://www.googleapis.com/auth/youtube'
+        'openid',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
     ]
     
     # Flow オブジェクトを作成
     flow = Flow.from_client_secrets_file(
         client_secrets_file,
         scopes=scopes,
-        redirect_uri='http://localhost:8000/oauth2callback'  # リダイレクトURIを修正
+        redirect_uri='http://localhost:8000/login/google/callback'
     )
     
     return flow

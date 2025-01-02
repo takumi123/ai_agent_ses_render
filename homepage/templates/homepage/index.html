@@ -5,40 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>動画分析アプリ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://accounts.google.com/gsi/client" async></script>
+    <script src="https://apis.google.com/js/platform.js" async defer></script>
+    <meta name="google-signin-client_id" content="{{ GOOGLE_OAUTH_CLIENT_ID }}">
 </head>
 <body class="bg-gray-100">
     <div class="min-h-screen flex flex-col">
-        <!-- ヘッダー -->
-        <header class="bg-white shadow-sm">
-            <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between h-16">
-                    <div class="flex">
-                        <div class="flex-shrink-0 flex items-center">
-                            <h1 class="text-2xl font-bold text-gray-900">動画分析アプリ</h1>
-                        </div>
-                    </div>
-                    <div class="flex items-center">
-                        {% if user.is_authenticated %}
-                            <div class="flex items-center space-x-4">
-                                {% if user.is_admin %}
-                                    <a href="{% url 'homepage:user_list' %}" class="text-gray-700 hover:text-gray-900">ユーザー一覧</a>
-                                {% endif %}
-                                <a href="{% url 'homepage:video_list' %}" class="text-gray-700 hover:text-gray-900">動画一覧</a>
-                                <a href="{% url 'homepage:video_upload' %}" class="text-gray-700 hover:text-gray-900">アップロード</a>
-                                <div class="flex items-center space-x-2">
-                                    {% if user.avatar_url %}
-                                        <img src="{{ user.avatar_url }}" alt="プロフィール画像" class="h-8 w-8 rounded-full">
-                                    {% endif %}
-                                    <span class="text-gray-700">{{ user.email }}</span>
-                                </div>
-                                <a href="{% url 'homepage:logout' %}" class="text-red-600 hover:text-red-800">ログアウト</a>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </nav>
-        </header>
+        {% include 'homepage/includes/header.html' %}
 
         <!-- メインコンテンツ -->
         <main class="flex-grow">
@@ -77,41 +49,14 @@
                             Googleアカウントでログインして始めましょう。
                         </p>
                         <div class="flex justify-center">
-                            <script>
-                                function handleCredentialResponse(response) {
-                                    // トークンをサーバーに送信
-                                    fetch('{% url "homepage:google_login" %}', {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/x-www-form-urlencoded',
-                                        },
-                                        body: 'credential=' + response.credential
-                                    })
-                                    .then(response => response.json())
-                                    .then(data => {
-                                        if (data.success) {
-                                            window.location.reload();
-                                        } else {
-                                            console.error('Login failed');
-                                        }
-                                    })
-                                    .catch(error => {
-                                        console.error('Error:', error);
-                                    });
-                                }
-                            </script>
-                            <div id="g_id_onload"
-                                data-client_id="{{ GOOGLE_OAUTH_CLIENT_ID }}"
-                                data-callback="handleCredentialResponse"
-                                data-auto_prompt="false">
-                            </div>
-                            <div class="g_id_signin"
-                                data-type="standard"
-                                data-size="large"
-                                data-theme="outline"
-                                data-text="sign_in_with"
-                                data-shape="rectangular"
-                                data-logo_alignment="left">
+                            {% csrf_token %}
+                            <div class="mt-4">
+                                <a href="{% url 'homepage:authorize' %}?next={{ request.GET.next|default:'' }}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                    <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                                        <path fill="currentColor" d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z" />
+                                    </svg>
+                                    Googleでログイン
+                                </a>
                             </div>
                         </div>
                     </div>

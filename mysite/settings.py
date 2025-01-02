@@ -32,6 +32,10 @@ SECRET_KEY = os.environ.get('SECRET_KEY', default='your secret key')
 DEBUG = True if not os.environ.get('RENDER') else False
 print(f"DEBUG mode: {DEBUG}")  # デバッグ用
 
+# 開発環境でのOAuth設定
+if DEBUG:
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 ALLOWED_HOSTS = []
 
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
