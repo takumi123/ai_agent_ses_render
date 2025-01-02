@@ -200,11 +200,19 @@ def video_upload(request):
             
             if video.status == 'completed' and video.youtube_url:
                 logger.info(f'Upload successful. YouTube URL: {video.youtube_url}')
+                
+                # サムネイルの更新
+                if video.youtube_id:
+                    video.thumbnail_url = f'https://img.youtube.com/vi/{video.youtube_id}/hqdefault.jpg'
+                    video.save()
+                    logger.info(f'Thumbnail URL updated: {video.thumbnail_url}')
+                
                 return JsonResponse({
                     'success': True,
                     'video_id': video.id,
                     'message': 'アップロードが完了しました',
-                    'youtube_url': video.youtube_url
+                    'youtube_url': video.youtube_url,
+                    'thumbnail_url': video.thumbnail_url
                 })
             else:
                 error_msg = video.error_message or 'アップロードに失敗しました'
@@ -322,16 +330,62 @@ def analyze_unprocessed_videos(request):
         'message': f'{unprocessed_videos.count()}件の動画の分析を開始しました。'
     })
 
-def video_detail(request, video_id):
-    """動画詳細"""
+@login_required
+@require_http_methods(["POST"])
+def analyze_with_gemini(request, video_id):
+    """Geminiで動画を分析"""
     video = get_object_or_404(Video, id=video_id)
     if not request.user.is_admin and video.user != request.user:
         return JsonResponse({'error': '権限がありません。'}, status=403)
 
+    # 分析タスクの作成
+    if video.youtube_url:
+        VideoProcessingQueue.objects.get_or_create(
+            video=video,
+            task_type='analyze',
+            defaults={'priority': 1}
+        )
+        return JsonResponse({
+            'message': '動画の分析を開始しました。'
+        })
+    return JsonResponse({
+        'error': 'YouTube URLが見つかりません。'
+    }, status=400)
+
+@login_required
+def video_detail(request, video_id):
+    """動画詳細"""
+    video = get_object_or_404(Video, id=video_id)
+    # ログイン済みユーザーの場合のみ is_admin をチェック
+    if not getattr(request.user, 'is_admin', False) and video.user != request.user:
+        return JsonResponse({'error': '権限がありません。'}, status=403)
+
     reviews = video.reviews.all()
+    
+    # 分析サマリー内の時間表記をリンクに変換
+    import re
+    def convert_to_seconds(time_str):
+        parts = time_str.split(':')
+        if len(parts) == 2:  # MM:SS
+            return int(parts[0]) * 60 + int(parts[1])
+        elif len(parts) == 3:  # HH:MM:SS
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        return 0
+
+    def replace_timestamp(match):
+        time_str = match.group(0)
+        seconds = convert_to_seconds(time_str)
+        return f'<a href="javascript:void(0)" onclick="seekTo({seconds})" class="text-blue-600 hover:text-blue-800">{time_str}</a>'
+
+    analysis_summary = video.analysis_summary
+    if analysis_summary:
+        pattern = r'\d{2}:\d{2}(?::\d{2})?'
+        analysis_summary = re.sub(pattern, replace_timestamp, analysis_summary)
+
     return render(request, 'homepage/video_detail.html', {
         'video': video,
-        'reviews': reviews
+        'reviews': reviews,
+        'analysis_summary': analysis_summary
     })
 
 @login_required
@@ -372,6 +426,28 @@ def review_list(request, video_id):
             }
             for review in reviews
         ]
+    })
+
+@login_required
+@user_passes_test(lambda u: u.is_admin)
+def update_video_thumbnails(request):
+    """既存の動画のサムネイルURLを更新"""
+    # YouTube IDがあり、サムネイルURLが設定されていない動画を取得
+    videos = Video.objects.filter(
+        youtube_id__isnull=False
+    ).exclude(youtube_id='')
+
+    updated_count = 0
+    for video in videos:
+        # サムネイルURLを設定
+        thumbnail_url = f'https://img.youtube.com/vi/{video.youtube_id}/hqdefault.jpg'
+        if video.thumbnail_url != thumbnail_url:
+            video.thumbnail_url = thumbnail_url
+            video.save()
+            updated_count += 1
+
+    return JsonResponse({
+        'message': f'{updated_count}件の動画のサムネイルを更新しました。'
     })
 
 def logout_view(request):

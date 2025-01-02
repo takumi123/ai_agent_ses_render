@@ -39,7 +39,12 @@ def get_youtube_credentials(user):
         raise Exception('YouTube認証が必要です')
     return Credentials.from_authorized_user_info(
         json.loads(user.youtube_credentials),
-        ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.force-ssl']
+        [
+            'https://www.googleapis.com/auth/youtube.upload',
+            'https://www.googleapis.com/auth/youtube.force-ssl',
+            'https://www.googleapis.com/auth/youtube',
+            'https://www.googleapis.com/auth/youtube.readonly'
+        ]
     )
 
 def delete_from_youtube(video):
@@ -164,6 +169,7 @@ def upload_to_youtube(video_id):
             logger.info('Upload completed successfully')
             video.youtube_id = response['id']
             video.youtube_url = f'https://www.youtube.com/watch?v={response["id"]}'
+            video.thumbnail_url = f'https://img.youtube.com/vi/{response["id"]}/hqdefault.jpg'
             video.status = 'completed'
             video.save()
             logger.info(f'Video available at: {video.youtube_url}')
@@ -188,26 +194,46 @@ def analyze_with_gemini(video_id):
         if not video.youtube_url:
             raise Exception('YouTube URLが見つかりません')
 
+        # YouTube APIクライアントの構築
+        credentials = get_youtube_credentials(video.user)
+        youtube = build('youtube', 'v3', credentials=credentials)
+
+        # 動画情報の取得
+        video_response = youtube.videos().list(
+            part='contentDetails',
+            id=video.youtube_id
+        ).execute()
+
+        if not video_response['items']:
+            raise Exception('YouTube動画情報の取得に失敗しました')
+
         # Vertex AIの初期化
         vertexai.init(project="find-partner-443223", location="asia-northeast1")
         model = GenerativeModel("gemini-1.5-pro-002")
 
-        # プロンプトの作成
-        prompt = f"""
-        以下のYouTube動画を分析してください：{video.youtube_url}
+        # 動画コンテンツの準備
+        video_part = Part.from_uri(
+            uri=video.youtube_url,
+            mime_type="video/mp4"
+        )
 
-        分析項目：
+        # プロンプトの作成
+        prompt = """
+        この動画について以下の項目を分析してください：
+
         1. 動画の主なトピックや内容
-        2. 重要なポイントや見どころ
-        3. 動画の品質や構成
-        4. 改善点や提案（もしあれば）
+        2. 重要なポイントや見どころ（タイムスタンプ付き）
+        3. 動画内の会話や音声の重要な部分
+        4. 動画の品質や構成
+        5. 改善点や提案（もしあれば）
 
         できるだけ具体的に分析し、日本語で箇条書きでまとめてください。
+        タイムスタンプは MM:SS 形式で記載してください。
         """
 
         # Geminiによる分析（ストリーミングモード）
         responses = model.generate_content(
-            prompt,
+            [video_part, prompt],
             generation_config={
                 "max_output_tokens": 2048,
                 "temperature": 0.4,
@@ -222,6 +248,25 @@ def analyze_with_gemini(video_id):
         for response in responses:
             if hasattr(response, 'text'):
                 full_response += response.text
+
+        # タイムスタンプ付きレビューの抽出と保存
+        import re
+        timestamp_pattern = r'(\d{2}:\d{2})[：:]\s*(.+?)(?=\d{2}:\d{2}|$)'
+        matches = re.finditer(timestamp_pattern, full_response)
+        
+        for match in matches:
+            timestamp = match.group(1)
+            content = match.group(2).strip()
+            if content:
+                # タイムスタンプを秒に変換
+                minutes, seconds = map(int, timestamp.split(':'))
+                timestamp_seconds = minutes * 60 + seconds
+                
+                TimeStampedReview.objects.create(
+                    video=video,
+                    timestamp=timestamp_seconds,
+                    content=content
+                )
         
         # 分析結果の保存
         video.analysis_summary = full_response
