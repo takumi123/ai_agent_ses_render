@@ -1,0 +1,91 @@
+{% extends "homepage/admin/base.html" %}
+
+{% block title %}ダッシュボード{% endblock %}
+
+{% block header %}ダッシュボード{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- 統計情報 -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">統計情報</h3>
+        <div class="space-y-4">
+            <div>
+                <p class="text-sm text-gray-500">総ユーザー数</p>
+                <p class="text-2xl font-bold text-gray-900">{{ total_users }}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500">総動画数</p>
+                <p class="text-2xl font-bold text-gray-900">{{ total_videos }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最近の動画 -->
+    <div class="bg-white shadow rounded-lg p-6 col-span-2">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-medium text-gray-900">最近の動画</h3>
+            <a href="{% url 'homepage:admin_videos' %}" class="text-sm text-blue-600 hover:text-blue-800">すべて表示</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead>
+                    <tr>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            タイトル
+                        </th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ユーザー
+                        </th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ステータス
+                        </th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            アップロード日
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for video in recent_videos %}
+                    <tr>
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-medium text-gray-900">{{ video.title }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">{{ video.user.username }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 py-1 text-xs rounded {% if video.status == 'completed' %}bg-green-100 text-green-800{% elif video.status == 'failed' %}bg-red-100 text-red-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                {{ video.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ video.created_at|date:"Y/m/d H:i" }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- クイックアクション -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">クイックアクション</h3>
+        <div class="space-y-4">
+            <a href="{% url 'homepage:admin_users' %}" 
+               class="block w-full text-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                ユーザー管理
+            </a>
+            <a href="{% url 'homepage:admin_videos' %}"
+               class="block w-full text-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                動画管理
+            </a>
+            <a href="{% url 'homepage:admin_categories' %}"
+               class="block w-full text-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                評価カテゴリ管理
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
