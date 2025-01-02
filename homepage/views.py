@@ -1,9 +1,11 @@
 import json
 from django.shortcuts import render, redirect, get_object_or_404
+from django.http import HttpResponse
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from django.core.files.storage import default_storage
 from django.conf import settings
 from django.urls import reverse
@@ -222,6 +224,104 @@ def video_upload(request):
     return render(request, 'homepage/video_upload.html')
 
 @login_required
+@login_required
+@login_required
+@csrf_exempt
+def bulk_process_videos(request):
+    """選択された動画の一括処理"""
+    if not request.method == 'POST':
+        return JsonResponse({'error': '不正なリクエストです。'}, status=400)
+
+    video_ids = request.POST.getlist('video_ids[]')
+    action = request.POST.get('action')
+
+    if not video_ids:
+        return JsonResponse({'error': '動画が選択されていません。'}, status=400)
+
+    if action not in ['analyze', 'delete']:
+        return JsonResponse({'error': '不正な操作です。'}, status=400)
+
+    try:
+        videos = Video.objects.filter(id__in=video_ids)
+        
+        # ユーザーの権限チェック
+        if not request.user.is_admin:
+            videos = videos.filter(user=request.user)
+            if not videos.exists():
+                return JsonResponse({'error': '権限がありません。'}, status=403)
+
+        if action == 'analyze':
+            # 分析タスクの作成
+            for video in videos:
+                if video.youtube_url:  # YouTube URLが存在する場合のみ分析を実行
+                    VideoProcessingQueue.objects.get_or_create(
+                        video=video,
+                        task_type='analyze',
+                        defaults={'priority': 1}
+                    )
+            return JsonResponse({
+                'message': f'{videos.count()}件の動画の分析を開始しました。'
+            })
+        
+        elif action == 'delete':
+            # YouTubeからの削除とデータベースからの削除
+            count = videos.count()
+            failed_deletions = []
+
+            # まずYouTubeから削除
+            for video in videos:
+                if video.youtube_id:  # YouTube IDがある場合のみ削除を試みる
+                    try:
+                        from .tasks import delete_from_youtube
+                        delete_from_youtube(video)
+                    except Exception as e:
+                        error_msg = f'YouTube動画の削除に失敗しました（ID: {video.id}）: {str(e)}'
+                        logger.error(error_msg)
+                        failed_deletions.append(error_msg)
+
+            # データベースから削除
+            videos.delete()
+
+            # エラーメッセージの処理
+            if failed_deletions:
+                return JsonResponse({
+                    'message': f'{count}件の動画をデータベースから削除しました。\n' +
+                              'ただし、以下のYouTube動画の削除に失敗しました：\n' +
+                              '\n'.join(failed_deletions)
+                })
+            return JsonResponse({
+                'message': f'{count}件の動画を削除しました。'
+            })
+
+    except Exception as e:
+        logger.error(f'Bulk process error: {str(e)}')
+        return JsonResponse({
+            'error': f'処理中にエラーが発生しました: {str(e)}'
+        }, status=500)
+
+def analyze_unprocessed_videos(request):
+    """未分析の動画を検出して分析を実行"""
+    if not request.user.is_admin:
+        return JsonResponse({'error': '権限がありません。'}, status=403)
+
+    # 分析が未実行の動画を検索（analysis_summaryが空で、youtube_urlが存在する動画）
+    unprocessed_videos = Video.objects.filter(
+        analysis_summary='',
+        youtube_url__isnull=False
+    ).exclude(youtube_url='')
+
+    # 各動画に対して分析タスクを作成
+    for video in unprocessed_videos:
+        VideoProcessingQueue.objects.get_or_create(
+            video=video,
+            task_type='analyze',
+            defaults={'priority': 1}
+        )
+
+    return JsonResponse({
+        'message': f'{unprocessed_videos.count()}件の動画の分析を開始しました。'
+    })
+
 def video_detail(request, video_id):
     """動画詳細"""
     video = get_object_or_404(Video, id=video_id)

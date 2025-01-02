@@ -8,6 +8,25 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part
+import os
+import json
+import logging
+from datetime import datetime
+from django.conf import settings
+from django.utils import timezone
+
+import os
+import json
+import logging
+from datetime import datetime
+from django.conf import settings
+from django.utils import timezone
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 from .models import User, Video, TimeStampedReview, VideoProcessingQueue
 
@@ -20,8 +39,39 @@ def get_youtube_credentials(user):
         raise Exception('YouTube認証が必要です')
     return Credentials.from_authorized_user_info(
         json.loads(user.youtube_credentials),
-        ['https://www.googleapis.com/auth/youtube.upload']
+        ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.force-ssl']
     )
+
+def delete_from_youtube(video):
+    """YouTubeから動画を削除する"""
+    try:
+        if not video.youtube_id:
+            logger.info(f'Video {video.id} has no YouTube ID, skipping deletion')
+            return
+
+        logger.info(f'Starting YouTube deletion process for video ID: {video.id}')
+        
+        # YouTube認証情報を取得
+        try:
+            credentials = get_youtube_credentials(video.user)
+        except Exception as e:
+            raise Exception(f'YouTube認証エラー: {str(e)}')
+
+        # YouTube APIクライアントの構築
+        youtube = build('youtube', 'v3', credentials=credentials)
+
+        # 動画の削除
+        try:
+            youtube.videos().delete(
+                id=video.youtube_id
+            ).execute()
+            logger.info(f'Successfully deleted YouTube video: {video.youtube_id}')
+        except Exception as e:
+            raise Exception(f'YouTube動画の削除に失敗しました: {str(e)}')
+
+    except Exception as e:
+        logger.error(f'YouTube deletion error: {str(e)}')
+        raise
 
 def upload_to_youtube(video_id):
     """動画をYouTubeにアップロードする"""
@@ -131,6 +181,63 @@ def upload_to_youtube(video_id):
             logger.info(f'Updated video status to failed: {error_msg}')
         raise  # エラーを再度発生させて呼び出し元で処理できるようにする
 
+def analyze_with_gemini(video_id):
+    """Vertex AI Gemini 1.5 Pro 002で動画を分析する"""
+    try:
+        video = Video.objects.get(id=video_id)
+        if not video.youtube_url:
+            raise Exception('YouTube URLが見つかりません')
+
+        # Vertex AIの初期化
+        vertexai.init(project="find-partner-443223", location="asia-northeast1")
+        model = GenerativeModel("gemini-1.5-pro-002")
+
+        # プロンプトの作成
+        prompt = f"""
+        以下のYouTube動画を分析してください：{video.youtube_url}
+
+        分析項目：
+        1. 動画の主なトピックや内容
+        2. 重要なポイントや見どころ
+        3. 動画の品質や構成
+        4. 改善点や提案（もしあれば）
+
+        できるだけ具体的に分析し、日本語で箇条書きでまとめてください。
+        """
+
+        # Geminiによる分析（ストリーミングモード）
+        responses = model.generate_content(
+            prompt,
+            generation_config={
+                "max_output_tokens": 2048,
+                "temperature": 0.4,
+                "top_p": 0.8,
+                "top_k": 40
+            },
+            stream=True
+        )
+
+        # ストリーミングレスポンスの結合
+        full_response = ""
+        for response in responses:
+            if hasattr(response, 'text'):
+                full_response += response.text
+        
+        # 分析結果の保存
+        video.analysis_summary = full_response
+        video.status = 'completed'
+        video.save()
+
+        return full_response
+
+    except Exception as e:
+        logger.error(f'Gemini analysis error for video {video_id}: {str(e)}')
+        if video:
+            video.status = 'failed'
+            video.error_message = f'Gemini分析エラー: {str(e)}'
+            video.save()
+        raise
+
 def process_video_queue():
     """動画処理キューを処理する"""
     logger.info("Starting video queue processing...")
@@ -157,6 +264,17 @@ def process_video_queue():
                     logger.info(f"Starting YouTube upload for video {task.video.id}")
                     upload_to_youtube(task.video.id)
                     logger.info(f"YouTube upload completed for video {task.video.id}")
+                    
+                    # アップロード完了後、Gemini分析タスクを追加
+                    VideoProcessingQueue.objects.create(
+                        video=task.video,
+                        task_type='analyze',
+                        priority=1
+                    )
+                elif task.task_type == 'analyze':
+                    logger.info(f"Starting Gemini analysis for video {task.video.id}")
+                    analyze_with_gemini(task.video.id)
+                    logger.info(f"Gemini analysis completed for video {task.video.id}")
 
                 # 成功したタスクを削除
                 task.delete()

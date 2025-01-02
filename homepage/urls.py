@@ -15,9 +15,11 @@ urlpatterns = [
     path('videos/<int:video_id>/', views.video_detail, name='video_detail'),
     path('videos/<int:video_id>/status/', views.video_status, name='video_status'),
     path('videos/<int:video_id>/reviews/', views.review_list, name='review_list'),
+    path('videos/bulk-process/', views.bulk_process_videos, name='bulk_process_videos'),
 
     # 管理者用
     path('users/', views.user_list, name='user_list'),
+    path('videos/analyze-unprocessed/', views.analyze_unprocessed_videos, name='analyze_unprocessed_videos'),
 
     # OAuth関連
     path('authorize', views.authorize, name='authorize'),
