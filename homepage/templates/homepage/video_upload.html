@@ -117,53 +117,48 @@
             try {
                 const response = await fetch('{% url "homepage:video_upload" %}', {
                     method: 'POST',
-                    body: form
+                    body: form,
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
                 });
 
-                const data = await response.json();
-                
-                if (response.status === 403 && data.redirect_url) {
-                    // YouTube認証が必要な場合はリダイレクト
-                    window.location.href = data.redirect_url;
-                    return;
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
+                let data;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    throw new Error('サーバーからの応答が不正です');
+                }
+                
                 if (data.success) {
                     // アップロード成功時の処理
-                    statusText.textContent = 'アップロード完了';
+                    statusText.textContent = data.message || 'アップロード完了';
                     progressBar.style.width = '100%';
                     progressText.textContent = '100%';
 
-                    // 動画の処理状態を定期的に確認
-                    const checkStatus = async () => {
-                        const statusResponse = await fetch(`/videos/${data.video_id}/status/`);
-                        const statusData = await statusResponse.json();
-
-                        statusText.textContent = {
-                            'pending': '処理待ち',
-                            'uploading': 'YouTubeにアップロード中',
-                            'analyzing': 'AI分析中',
-                            'completed': '完了',
-                            'failed': '失敗'
-                        }[statusData.status];
-
-                        if (statusData.status === 'completed') {
+                    if (data.youtube_url) {
+                        // YouTubeのURLが含まれている場合は動画詳細ページに遷移
+                        window.location.href = `/videos/${data.video_id}/`;
+                    } else {
+                        // 動画詳細ページに遷移
+                        setTimeout(() => {
                             window.location.href = `/videos/${data.video_id}/`;
-                        } else if (statusData.status === 'failed') {
-                            errorText.textContent = statusData.error_message;
-                            errorText.classList.remove('hidden');
-                        } else {
-                            setTimeout(checkStatus, 5000);  // 5秒ごとに確認
-                        }
-                    };
-
-                    checkStatus();
+                        }, 1000);
+                    }
+                } else if (response.status === 403 && data.redirect_url) {
+                    // YouTube認証が必要な場合はリダイレクト
+                    window.location.href = data.redirect_url;
                 } else {
                     throw new Error(data.error || 'アップロードに失敗しました');
                 }
             } catch (error) {
+                console.error('Upload error:', error);
                 statusText.textContent = '失敗';
-                errorText.textContent = error.message;
+                errorText.textContent = error.message || 'アップロードに失敗しました';
                 errorText.classList.remove('hidden');
             }
         });

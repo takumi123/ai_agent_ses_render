@@ -8,8 +8,6 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part, SafetySetting
 
 from .models import User, Video, TimeStampedReview, VideoProcessingQueue
 
@@ -27,208 +25,148 @@ def get_youtube_credentials(user):
 
 def upload_to_youtube(video_id):
     """動画をYouTubeにアップロードする"""
+    video = None
     try:
-        video = Video.objects.get(id=video_id)
+        logger.info(f'Starting YouTube upload process for video ID: {video_id}')
+        
+        # 動画情報の取得
+        try:
+            video = Video.objects.get(id=video_id)
+            logger.info(f'Found video: {video.title}')
+        except Video.DoesNotExist:
+            raise Exception('動画が見つかりません')
+        
+        # ファイルの存在確認
+        if not os.path.exists(video.local_file.path):
+            raise Exception('動画ファイルが見つかりません')
+
+        # ファイルサイズの確認
+        file_size = os.path.getsize(video.local_file.path)
+        if file_size == 0:
+            raise Exception('動画ファイルが空です')
+        logger.info(f'Video file size: {file_size} bytes')
+
+        # ステータスを更新
         video.status = 'uploading'
         video.save()
+        logger.info('Updated status to uploading')
 
         # ユーザーのYouTube認証情報を取得
-        credentials = get_youtube_credentials(video.user)
+        try:
+            logger.info('Getting YouTube credentials')
+            credentials = get_youtube_credentials(video.user)
+            logger.info('Successfully got YouTube credentials')
+        except Exception as e:
+            raise Exception(f'YouTube認証エラー: {str(e)}')
 
-        # YouTube APIクライアントの構築
-        youtube = build('youtube', 'v3', credentials=credentials)
+        try:
+            # YouTube APIクライアントの構築
+            logger.info('Building YouTube API client')
+            youtube = build('youtube', 'v3', credentials=credentials)
 
-        # 動画のメタデータを設定
-        body = {
-            'snippet': {
-                'title': video.title,
-                'description': video.description,
-                'tags': ['AI分析対象']
-            },
-            'status': {
-                'privacyStatus': 'unlisted'
+            # 動画のメタデータを設定
+            body = {
+                'snippet': {
+                    'title': video.title,
+                    'description': video.description,
+                    'tags': ['AI分析対象']
+                },
+                'status': {
+                    'privacyStatus': 'unlisted'
+                }
             }
-        }
+            logger.info('Prepared video metadata')
 
-        # 動画ファイルのアップロード
-        insert_request = youtube.videos().insert(
-            part=','.join(body.keys()),
-            body=body,
-            media_body=MediaFileUpload(
+            # 動画ファイルのアップロード準備
+            logger.info(f'Preparing to upload file: {video.local_file.path}')
+            media = MediaFileUpload(
                 video.local_file.path,
                 chunksize=-1,
                 resumable=True
             )
-        )
 
-        # アップロードの実行
-        response = None
-        while response is None:
-            status, response = insert_request.next_chunk()
-            if status:
-                logger.info(f'Uploaded {int(status.progress() * 100)}%')
-
-        # アップロード成功時の処理
-        video.youtube_id = response['id']
-        video.youtube_url = f'https://www.youtube.com/watch?v={response["id"]}'
-        video.status = 'completed'
-        video.save()
-
-        # 分析タスクをキューに追加
-        VideoProcessingQueue.objects.create(
-            video=video,
-            task_type='analyze',
-            priority=1
-        )
-
-    except Exception as e:
-        logger.error(f'YouTube upload error: {str(e)}')
-        if video:
-            video.status = 'failed'
-            video.error_message = str(e)
-            video.save()
-
-def analyze_video_with_gemini(video_id):
-    """Vertex AI Geminiで動画を分析する"""
-    try:
-        video = Video.objects.get(id=video_id)
-        video.status = 'analyzing'
-        video.save()
-
-        # Vertex AIの初期化
-        vertexai.init(project=os.environ.get('GOOGLE_CLOUD_PROJECT'), location="asia-northeast1")
-        
-        # Geminiモデルの設定
-        generation_config = {
-            "max_output_tokens": 8192,
-            "temperature": 1,
-            "top_p": 0.95,
-        }
-
-        safety_settings = [
-            SafetySetting(
-                category=SafetySetting.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=SafetySetting.HarmBlockThreshold.OFF
-            ),
-            SafetySetting(
-                category=SafetySetting.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=SafetySetting.HarmBlockThreshold.OFF
-            ),
-            SafetySetting(
-                category=SafetySetting.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=SafetySetting.HarmBlockThreshold.OFF
-            ),
-            SafetySetting(
-                category=SafetySetting.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=SafetySetting.HarmBlockThreshold.OFF
-            ),
-        ]
-
-        model = GenerativeModel(
-            "gemini-1.5-pro-002",
-        )
-
-        # YouTube Data APIで動画情報を取得
-        credentials = get_youtube_credentials(video.user)
-        youtube = build('youtube', 'v3', credentials=credentials)
-
-        # 動画の詳細情報を取得
-        video_response = youtube.videos().list(
-            part='snippet,contentDetails',
-            id=video.youtube_id
-        ).execute()
-
-        if not video_response['items']:
-            raise Exception('Video not found on YouTube')
-
-        video_data = video_response['items'][0]
-        
-        # Geminiによる分析
-        prompt = f"""
-        以下の動画を分析してください：
-        タイトル: {video_data['snippet']['title']}
-        説明: {video_data['snippet']['description']}
-        URL: {video.youtube_url}
-
-        以下の観点で分析してください：
-        1. 動画の主要なトピックや要点
-        2. 重要な時間帯とその内容
-        3. 感情分析（ポジティブ/ネガティブ）
-        4. 改善点や提案
-
-        結果は以下のJSON形式で返してください：
-        {
-            "summary": "全体的な要約",
-            "topics": ["トピック1", "トピック2", ...],
-            "timestamps": [
-                {"time": "秒数", "content": "内容", "sentiment": "感情スコア"}
-            ],
-            "suggestions": ["提案1", "提案2", ...]
-        }
-        """
-
-        # 分析の実行（ストリーミング）
-        responses = model.generate_content(
-            [prompt],
-            generation_config=generation_config,
-            safety_settings=safety_settings,
-            stream=True,
-        )
-
-        # レスポンスの結合
-        full_response = ""
-        for response in responses:
-            full_response += response.text
-
-        # JSON解析
-        analysis_data = json.loads(full_response)
-
-        # 分析結果の保存
-        video.analysis_summary = analysis_data['summary']
-        video.analysis_data = analysis_data
-        video.status = 'completed'
-        video.save()
-
-        # タイムスタンプ付きレビューの作成
-        for timestamp_data in analysis_data['timestamps']:
-            TimeStampedReview.objects.create(
-                video=video,
-                timestamp=int(timestamp_data['time']),
-                content=timestamp_data['content'],
-                sentiment=float(timestamp_data['sentiment'])
+            # アップロードリクエストの作成
+            insert_request = youtube.videos().insert(
+                part=','.join(body.keys()),
+                body=body,
+                media_body=media
             )
+            logger.info('Created upload request')
+
+            # アップロードの実行
+            response = None
+            last_progress = 0
+            while response is None:
+                try:
+                    status, response = insert_request.next_chunk()
+                    if status:
+                        progress = int(status.progress() * 100)
+                        if progress > last_progress:
+                            logger.info(f'Upload progress: {progress}%')
+                            last_progress = progress
+                except Exception as e:
+                    raise Exception(f'アップロード中にエラーが発生しました: {str(e)}')
+
+            if not response:
+                raise Exception('アップロードに失敗しました')
+
+            # アップロード成功時の処理
+            logger.info('Upload completed successfully')
+            video.youtube_id = response['id']
+            video.youtube_url = f'https://www.youtube.com/watch?v={response["id"]}'
+            video.status = 'completed'
+            video.save()
+            logger.info(f'Video available at: {video.youtube_url}')
+
+        except Exception as e:
+            raise Exception(f'YouTube API エラー: {str(e)}')
 
     except Exception as e:
-        logger.error(f'Gemini analysis error: {str(e)}')
+        error_msg = str(e)
+        logger.error(f'Upload error: {error_msg}', exc_info=True)
         if video:
             video.status = 'failed'
-            video.error_message = str(e)
+            video.error_message = error_msg
             video.save()
+            logger.info(f'Updated video status to failed: {error_msg}')
+        raise  # エラーを再度発生させて呼び出し元で処理できるようにする
 
 def process_video_queue():
     """動画処理キューを処理する"""
-    # 処理待ちのタスクを取得
-    tasks = VideoProcessingQueue.objects.filter(
-        attempts__lt=models.F('max_attempts')
-    ).select_related('video')
+    logger.info("Starting video queue processing...")
+    
+    try:
+        # 処理待ちのタスクを取得
+        tasks = VideoProcessingQueue.objects.filter(
+            attempts__lt=3  # max_attemptsを直接指定
+        ).select_related('video')
+        
+        logger.info(f"Found {tasks.count()} tasks to process")
 
-    for task in tasks:
-        try:
-            # 最終試行時刻を更新
-            task.last_attempt = timezone.now()
-            task.attempts += 1
-            task.save()
+        for task in tasks:
+            try:
+                logger.info(f"Processing task {task.id} for video {task.video.id} (type: {task.task_type})")
+                
+                # 最終試行時刻を更新
+                task.last_attempt = timezone.now()
+                task.attempts += 1
+                task.save()
 
-            # タスクタイプに応じた処理を実行
-            if task.task_type == 'upload':
-                upload_to_youtube(task.video.id)
-            elif task.task_type == 'analyze':
-                analyze_video_with_gemini(task.video.id)
+                # タスクタイプに応じた処理を実行
+                if task.task_type == 'upload':
+                    logger.info(f"Starting YouTube upload for video {task.video.id}")
+                    upload_to_youtube(task.video.id)
+                    logger.info(f"YouTube upload completed for video {task.video.id}")
 
-            # 成功したタスクを削除
-            task.delete()
+                # 成功したタスクを削除
+                task.delete()
+                logger.info(f"Task {task.id} completed successfully")
 
-        except Exception as e:
-            logger.error(f'Task processing error: {str(e)}')
-            # エラー時はタスクを保持（リトライ用）
-            task.save()
+            except Exception as e:
+                logger.error(f'Task processing error for task {task.id}: {str(e)}')
+                # エラー時はタスクを保持（リトライ用）
+                task.error_message = str(e)
+                task.save()
+                
+    except Exception as e:
+        logger.error(f'Queue processing error: {str(e)}')

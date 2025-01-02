@@ -8,10 +8,13 @@ from django.core.files.storage import default_storage
 from django.conf import settings
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
+import logging
 from google.oauth2 import id_token
 from google.auth.transport import requests
 
 from .models import User, Video, TimeStampedReview, VideoProcessingQueue
+
+logger = logging.getLogger(__name__)
 from .auth import GoogleOAuth2Backend, create_oauth_flow
 
 def index(request):
@@ -180,16 +183,41 @@ def video_upload(request):
             local_file=video_file
         )
 
-        # アップロードタスクをキューに追加
-        VideoProcessingQueue.objects.create(
-            video=video,
-            task_type='upload'
-        )
+        # 直接YouTubeにアップロード
+        from .tasks import upload_to_youtube
+        try:
+            logger.info(f'Starting YouTube upload process for video {video.id}')
+            logger.info(f'Video file path: {video.local_file.path}')
+            logger.info(f'Video file size: {video.local_file.size} bytes')
+            logger.info(f'User credentials: {target_user.youtube_credentials is not None}')
 
-        return JsonResponse({
-            'success': True,
-            'video_id': video.id
-        })
+            upload_to_youtube(video.id)
+            
+            # 動画情報を再取得（アップロード後の状態を取得）
+            video.refresh_from_db()
+            
+            if video.status == 'completed' and video.youtube_url:
+                logger.info(f'Upload successful. YouTube URL: {video.youtube_url}')
+                return JsonResponse({
+                    'success': True,
+                    'video_id': video.id,
+                    'message': 'アップロードが完了しました',
+                    'youtube_url': video.youtube_url
+                })
+            else:
+                error_msg = video.error_message or 'アップロードに失敗しました'
+                logger.error(f'Upload failed: {error_msg}')
+                return JsonResponse({
+                    'success': False,
+                    'error': error_msg
+                }, status=500)
+
+        except Exception as e:
+            logger.error(f'Upload error for video {video.id}: {str(e)}', exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': f'アップロードに失敗しました: {str(e)}'
+            }, status=500)
 
     return render(request, 'homepage/video_upload.html')
 
