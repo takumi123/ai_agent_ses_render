@@ -1,5 +1,4 @@
 from django.urls import path
-from django.contrib.auth.views import LogoutView
 from . import views
 
 app_name = 'homepage'
@@ -9,10 +8,7 @@ urlpatterns = [
     path('', views.index, name='index'),
     path('login/google/', views.google_login, name='google_login'),
     path('login/google/callback', views.google_callback, name='google_callback'),
-    path('logout/', LogoutView.as_view(), name='logout'),
-    path('youtube/auth/', views.youtube_auth, name='youtube_auth'),
-    path('youtube/callback', views.youtube_oauth2callback, name='youtube_oauth2callback'),
-
+    path('logout/', views.logout_view, name='logout'),
     # 動画関連
     path('videos/', views.video_list, name='video_list'),
     path('videos/upload/', views.video_upload, name='video_upload'),
@@ -24,6 +20,5 @@ urlpatterns = [
     path('users/', views.user_list, name='user_list'),
 
     # OAuth関連
-    path('oauth2callback', views.oauth2callback, name='oauth2callback'),
     path('authorize', views.authorize, name='authorize'),
 ]

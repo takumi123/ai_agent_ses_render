@@ -8,6 +8,7 @@ from google.oauth2.credentials import Credentials
 import json
 import jwt
 import os
+import requests as http_requests
 
 User = get_user_model()
 
@@ -19,19 +20,21 @@ class GoogleOAuth2Backend:
             return None
 
         try:
+            # トークンをデコード（検証なし）してpayloadを取得
+            payload = jwt.decode(token, options={"verify_signature": False})
+            
             # Google OAuth2 クライアントIDを使用してトークンを検証
             idinfo = id_token.verify_oauth2_token(
                 token,
                 requests.Request(),
                 settings.GOOGLE_OAUTH_CLIENT_ID
             )
-            print("Verified token info:", idinfo)  # デバッグ用
 
             # トークンの発行者を確認
             if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
                 raise ValueError('Wrong issuer.')
 
-            # ユーザー情報の取得
+            # アクセストークンを使用してユーザー情報を取得
             google_id = idinfo['sub']
             email = idinfo['email']
             name = idinfo.get('name', '')
@@ -44,12 +47,12 @@ class GoogleOAuth2Backend:
             # ユーザーの取得または作成
             try:
                 user = User.objects.get(google_id=google_id)
-                # 既存ユーザーの情報更新
+                # 既存ユーザーの情報を更新
                 user.email = email
                 user.avatar_url = picture
                 user.save()
             except User.DoesNotExist:
-                # 新規ユーザーの作成
+                # 新規ユーザーを作成
                 username = f'google_{google_id}'
                 user = User.objects.create(
                     username=username,
@@ -80,23 +83,26 @@ class GoogleOAuth2Backend:
         except User.DoesNotExist:
             return None
 
-def create_oauth_flow():
+def create_oauth_flow(flow_type='google'):
     """OAuth2.0フローを作成"""
     # クライアントシークレットファイルのパスを絶対パスで指定
     client_secrets_file = os.path.join(settings.BASE_DIR, "client_secret.json")
     
-    # スコープを指定
+    # フロータイプに応じてスコープとリダイレクトURIを設定
     scopes = [
         'openid',
         'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile'
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/youtube.upload',
+        'https://www.googleapis.com/auth/youtube'
     ]
+    redirect_uri = 'http://localhost:8000/login/google/callback'
     
     # Flow オブジェクトを作成
     flow = Flow.from_client_secrets_file(
         client_secrets_file,
         scopes=scopes,
-        redirect_uri='http://localhost:8000/login/google/callback'
+        redirect_uri=redirect_uri
     )
     
     return flow

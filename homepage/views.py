@@ -1,6 +1,6 @@
 import json
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
@@ -48,7 +48,7 @@ def google_login(request):
                 if next_url:
                     del request.session['next_url']
                     return redirect(next_url)
-                return redirect('homepage:video_upload')
+                return redirect('homepage:video_list')
             else:
                 print("Authentication failed: User not created/found")  # デバッグ用
                 return redirect('homepage:index')
@@ -67,7 +67,7 @@ def google_callback(request):
         if not state or state != stored_state:
             raise ValueError('State mismatch')
 
-        flow = create_oauth_flow()
+        flow = create_oauth_flow('google')
         flow.fetch_token(authorization_response=request.build_absolute_uri())
         credentials = flow.credentials
 
@@ -110,6 +110,18 @@ def google_callback(request):
                 user.first_name = name
             user.save()
 
+        # 認証情報をJSONとして保存
+        credentials_json = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes
+        }
+        user.youtube_credentials = json.dumps(credentials_json)
+        user.save()
+
         # ユーザーをログイン状態にする
         login(request, user, backend='homepage.auth.GoogleOAuth2Backend')
         
@@ -118,7 +130,7 @@ def google_callback(request):
         if next_url:
             del request.session['next_url']
             return redirect(next_url)
-        return redirect('homepage:video_upload')
+        return redirect('homepage:video_list')
 
     except Exception as e:
         print(f"Google callback error: {str(e)}")  # デバッグ用
@@ -156,8 +168,8 @@ def video_upload(request):
         if not target_user.youtube_credentials:
             return JsonResponse({
                 'success': False,
-                'error': 'YouTube認証が必要です',
-                'redirect_url': reverse('homepage:youtube_auth')
+                'error': 'Google認証が必要です。トップページから再度ログインしてください。',
+                'redirect_url': reverse('homepage:index')
             }, status=403)
 
         # 動画の保存
@@ -234,79 +246,10 @@ def review_list(request, video_id):
         ]
     })
 
-@login_required
-def youtube_auth(request):
-    """YouTube認証開始"""
-    print("Starting YouTube auth flow")  # デバッグ用
-    flow = create_oauth_flow()
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
-    print(f"Authorization URL: {authorization_url}")  # デバッグ用
-    print(f"State: {state}")  # デバッグ用
-    request.session['youtube_oauth_state'] = state
-    return redirect(authorization_url)
-
-@login_required
-def youtube_oauth2callback(request):
-    """YouTube認証コールバック"""
-    try:
-        flow = create_oauth_flow()
-        flow.fetch_token(
-            authorization_response=request.build_absolute_uri(),
-            state=request.session.get('youtube_oauth_state')
-        )
-        credentials = flow.credentials
-    except Exception as e:
-        print(f"YouTube OAuth error: {str(e)}")
-        return JsonResponse({'error': 'YouTube認証に失敗しました。'}, status=400)
-    credentials_json = {
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes
-    }
-
-    # 認証情報を保存
-    request.user.youtube_credentials = json.dumps(credentials_json)
-    request.user.save()
-
-    return redirect('homepage:video_upload')
-
-def oauth2callback(request):
-    flow = create_oauth_flow()
-    
-    # 現在のURLを取得
-    current_url = request.build_absolute_uri()
-    print(f"Current URL: {current_url}")  # デバッグ用
-    
-    try:
-        # 認証コードを取得
-        code = request.GET.get('code')
-        if not code:
-            return redirect('error')
-            
-        # 認証コードをトークンと交換
-        flow.fetch_token(code=code)
-        
-        # 認証情報をセッションに保存
-        credentials = flow.credentials
-        request.session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
-        
-        return redirect('homepage:video_upload')
-    except Exception as e:
-        print(f"OAuth error: {str(e)}")  # デバッグ用
-        return redirect('error')
+def logout_view(request):
+    """ログアウト処理"""
+    logout(request)
+    return redirect('homepage:index')
 
 def authorize(request):
     """Google OAuth2認証の開始"""
@@ -315,7 +258,7 @@ def authorize(request):
     if next_url:
         request.session['next_url'] = next_url
 
-    flow = create_oauth_flow()
+    flow = create_oauth_flow('google')
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
