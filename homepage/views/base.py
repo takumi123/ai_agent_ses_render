@@ -21,9 +21,13 @@ from ..auth import GoogleOAuth2Backend, create_oauth_flow
 
 def index(request):
     """トップページ"""
+    # ログイン済みの場合はvideo_listにリダイレクト
+    if request.user.is_authenticated:
+        return redirect('homepage:video_list')
+        
     context = {
         'GOOGLE_OAUTH_CLIENT_ID': settings.GOOGLE_OAUTH_CLIENT_ID,
-        'recent_videos': Video.objects.filter(status='completed').order_by('-created_at')[:6] if request.user.is_authenticated else []
+        'recent_videos': []
     }
     print("GOOGLE_OAUTH_CLIENT_ID:", context['GOOGLE_OAUTH_CLIENT_ID'])  # デバッグ用
     return render(request, 'homepage/index.html', context)
@@ -225,8 +229,6 @@ def video_upload(request):
 
     return render(request, 'homepage/video_upload.html')
 
-@login_required
-@login_required
 @login_required
 @csrf_exempt
 def bulk_process_videos(request):

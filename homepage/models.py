@@ -78,3 +78,30 @@ class VideoProcessingQueue(models.Model):
         verbose_name = _('動画処理キュー')
         verbose_name_plural = _('動画処理キュー')
         ordering = ['-priority', 'created_at']
+
+class EvaluationCategory(models.Model):
+    """評価カテゴリモデル"""
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('評価カテゴリ')
+        verbose_name_plural = _('評価カテゴリ')
+        ordering = ['order']
+
+class EvaluationSubCategory(models.Model):
+    """評価サブカテゴリモデル"""
+    category = models.ForeignKey(EvaluationCategory, on_delete=models.CASCADE, related_name='subcategories')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('評価サブカテゴリ')
+        verbose_name_plural = _('評価サブカテゴリ')
+        ordering = ['category', 'order']
